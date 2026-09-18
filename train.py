@@ -117,7 +117,7 @@ if not os.path.exists(args.log_dir):
 
 # VGG
 vgg = net.vgg
-vgg.load_state_dict(torch.load(args.vgg))
+vgg.load_state_dict(torch.load(args.vgg, weights_only=False))
 encoder = net.Net(vgg)
 encoder = nn.DataParallel(encoder)
 encoder.to(device)
@@ -133,7 +133,7 @@ if args.resume:
     if os.path.isfile(args.resume):
         print("--------loading checkpoint----------")
         print("=> loading checkpoint '{}'".format(args.resume))
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume, weights_only=False)
         args.start_iter = checkpoint['iter']
         glow_single.load_state_dict(checkpoint['state_dict'])
         #optimizer.load_state_dict(checkpoint['optimizer'])
@@ -163,7 +163,7 @@ style_iter = iter(data.DataLoader(
 
 optimizer = torch.optim.Adam(glow.module.parameters(), lr=args.lr)
 if args.resume:
-    if os.path.isfile(args.resume):
+    if os.path.isfile(args.resume) and 'optimizer' in checkpoint:
         optimizer.load_state_dict(checkpoint['optimizer'])
 
 log_c = []
@@ -197,7 +197,7 @@ for i in range(args.start_iter, args.max_iter):
     # optimizer update
     optimizer.zero_grad()
     loss_style.backward()
-    nn.utils.clip_grad_norm(glow.module.parameters(), 5)
+    nn.utils.clip_grad_norm_(glow.module.parameters(), 5)
     optimizer.step()
     
     # update loss log

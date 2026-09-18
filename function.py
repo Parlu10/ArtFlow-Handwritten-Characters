@@ -34,8 +34,8 @@ def _calc_feat_flatten_mean_std(feat):
 
 
 def _mat_sqrt(x):
-    U, D, V = torch.svd(x)
-    return torch.mm(torch.mm(U, D.pow(0.5).diag()), V.t())
+    U, D, Vh = torch.linalg.svd(x)
+    return torch.mm(torch.mm(U, D.pow(0.5).diag()), Vh)
 
 
 def coral(source, target):

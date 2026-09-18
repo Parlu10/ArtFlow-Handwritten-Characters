@@ -19,7 +19,8 @@ def wct(self, cont_feat, styl_feat):
 
     contentConv = torch.mm(cont_feat, cont_feat.t()).div(cFSize[1] - 1) + iden
     # del iden
-    c_u, c_e, c_v = torch.svd(contentConv, some=False)
+    c_u, c_e, c_v = torch.linalg.svd(contentConv)
+    c_v = c_v.transpose(0, 1)  # torch.linalg.svd returns Vh -> back to V
     # c_e2, c_v = torch.eig(contentConv, True)
     # c_e = c_e2[:,0]
 
@@ -33,7 +34,8 @@ def wct(self, cont_feat, styl_feat):
     s_mean = torch.mean(styl_feat, 1)
     styl_feat = styl_feat - s_mean.unsqueeze(1).expand_as(styl_feat)
     styleConv = torch.mm(styl_feat, styl_feat.t()).div(sFSize[1] - 1)
-    s_u, s_e, s_v = torch.svd(styleConv, some=False)
+    s_u, s_e, s_v = torch.linalg.svd(styleConv)
+    s_v = s_v.transpose(0, 1)  # torch.linalg.svd returns Vh -> back to V
 
     k_s = sFSize[0]
     for i in range(sFSize[0] - 1, -1, -1):
