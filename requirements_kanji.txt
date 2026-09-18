@@ -1,0 +1,9 @@
+# Kanji pipeline requirements — Python >=3.10 (tested 3.12)
+# RTX 50-series (Blackwell) requires CUDA 12.8 wheels, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+torch>=2.7
+torchvision>=0.22
+numpy
+scipy
+pillow
+gdown
