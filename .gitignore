@@ -1,0 +1,20 @@
+# large / generated data
+data/HWDB1.0/
+data/kanji_*/
+data/synthetic_handwritten.pkl
+
+# pretrained / trained models
+experiments/
+models/
+
+# outputs and logs
+output_*/
+output/
+logs/
+
+# python
+__pycache__/
+*.pyc
+
+# misc
+.DS_Store
