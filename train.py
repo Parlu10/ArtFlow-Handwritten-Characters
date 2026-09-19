@@ -22,10 +22,12 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True  # Disable OSError: image file is truncat
 
 
 def train_transform():
+    # Kanji pipeline: content/style are already rendered at 256² with the full
+    # glyph and a white background. No Resize(512)/RandomCrop(256) here, otherwise
+    # the crop would cut the glyph strokes. (The original photo-oriented transform
+    # is kept in continuous_transfer.py if you need the generic path.)
     transform_list = [
-        transforms.Resize(size=(512, 512)),
-        transforms.RandomCrop(256),
-        transforms.ToTensor()
+        transforms.Resize(size=(256, 256)),
     ]
     return transforms.Compose(transform_list)
 
