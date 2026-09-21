@@ -1,5 +1,6 @@
 import argparse
 import os
+import numpy as np
 import torch
 from pathlib import Path
 from PIL import Image
@@ -8,27 +9,40 @@ from torchvision.utils import save_image
 from test import test_transform
 
 
+def pick_medoid(style_paths, size):
+    """Return the style image closest to the medoid of the probe set.
+
+    Each style image is flattened to a greyscale vector; the medoid is the
+    sample minimizing the sum of pairwise L2 distances to all the others.
+    """
+    feats = []
+    for path in style_paths:
+        img = Image.open(str(path)).convert('L').resize((size, size), Image.LANCZOS)
+        feats.append(np.asarray(img, dtype=np.float32).flatten())
+    feats = np.stack(feats)
+    dist = np.linalg.norm(feats[:, None, :] - feats[None, :, :], axis=2)
+    medoid_idx = int(dist.sum(axis=1).argmin())
+    return style_paths[medoid_idx]
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Kanji stylization: transfer the style of a SINGLE fixed '
-                    'handwritten reference onto every synthetic kanji glyph '
-                    '(1-to-1, no cartesian product).')
+        description='Kanji stylization: transfer the style of the medoid of a '
+                    'batch of handwritten references (single style, 1-to-1, no '
+                    'cartesian product).')
     # Basic options
     parser.add_argument('--content_dir', type=str, default='data/kanji_content',
                         help='Directory path to the batch of synthetic kanji '
                              '(content) images')
     parser.add_argument('--style_dir', type=str, default='data/kanji_probe_style',
                         help='Directory path to the handwritten style images; '
-                             'a single one is picked deterministically '
-                             'as the style reference')
+                             'the sample closest to the medoid is picked '
+                             'automatically as the style reference')
     parser.add_argument('--decoder', type=str, default='experiments/ArtFlow-Kanji/glow.pth',
                         help='path for the fine-tuned decoder model')
     # Additional options
     parser.add_argument('--size', type=int, default=256,
                         help='New size for the content and style images')
-    parser.add_argument('--style_index', type=int, default=0,
-                        help='Index (after sorting) of the style reference to '
-                             'use for the whole batch')
     parser.add_argument('--save_ext', default='.png',
                         help='The extension name of the output image')
     parser.add_argument('--output', type=str, default='output_kanji',
@@ -63,8 +77,8 @@ def main():
     style_paths.sort()
     if not style_paths:
         raise RuntimeError(f"no style references found in {style_dir}")
-    style_path = style_paths[args.style_index % len(style_paths)]
-    print(f"single style reference ({args.style_index}): {style_path}")
+    style_path = pick_medoid(style_paths, args.size)
+    print(f"single style reference (medoid of {len(style_paths)}): {style_path}")
 
     # glow
     glow = Glow(3, args.n_flow, args.n_block, affine=args.affine,
