@@ -5,6 +5,8 @@
 # Output checkpoint: experiments/ArtFlow-Kanji/glow.pth
 set -e
 
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 RESUME="experiments/ArtFlow-AdaIN/glow.pth"
 
 if [ ! -f "$RESUME" ]; then
@@ -28,7 +30,7 @@ python -u train.py \
     --n_flow 8 \
     --n_block 2 \
     --operator adain \
-    --batch_size 8 \
+    --batch_size 2 \
     --lr 1e-5 \
     --max_iter 120000 \
     --print_interval 100 \
