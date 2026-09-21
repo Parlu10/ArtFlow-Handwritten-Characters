@@ -28,6 +28,7 @@ def train_transform():
     # is kept in continuous_transfer.py if you need the generic path.)
     transform_list = [
         transforms.Resize(size=(256, 256)),
+        transforms.ToTensor(),
     ]
     return transforms.Compose(transform_list)
 
