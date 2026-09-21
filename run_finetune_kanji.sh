@@ -30,6 +30,6 @@ python -u train.py \
     --operator adain \
     --batch_size 8 \
     --lr 1e-5 \
-    --max_iter 50000 \
+    --max_iter 120000 \
     --print_interval 100 \
     --save_model_interval 10000
