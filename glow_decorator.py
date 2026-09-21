@@ -264,14 +264,14 @@ class InvConv2dLU(nn.Module):
         u_mask = np.triu(np.ones_like(w_u), 1)
         l_mask = u_mask.T
 
-        w_p = torch.from_numpy(w_p)
-        w_l = torch.from_numpy(w_l)
-        w_s = torch.from_numpy(w_s)
-        w_u = torch.from_numpy(w_u)
+        w_p = torch.from_numpy(np.array(w_p, dtype=np.float32, order='C'))
+        w_l = torch.from_numpy(np.array(w_l, dtype=np.float32, order='C'))
+        w_s = torch.from_numpy(np.array(w_s, dtype=np.float32, order='C'))
+        w_u = torch.from_numpy(np.array(w_u, dtype=np.float32, order='C'))
 
         self.register_buffer('w_p', w_p)
-        self.register_buffer('u_mask', torch.from_numpy(u_mask))
-        self.register_buffer('l_mask', torch.from_numpy(l_mask))
+        self.register_buffer('u_mask', torch.from_numpy(np.array(u_mask, dtype=np.float32, order='C')))
+        self.register_buffer('l_mask', torch.from_numpy(np.array(l_mask, dtype=np.float32, order='C')))
         self.register_buffer('s_sign', torch.sign(w_s))
         self.register_buffer('l_eye', torch.eye(l_mask.shape[0]))
         self.w_l = nn.Parameter(w_l)
