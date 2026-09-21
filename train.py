@@ -115,6 +115,7 @@ if not os.path.exists(args.save_dir):
     os.mkdir(args.save_dir)
 if not os.path.isabs(args.resume) and os.path.dirname(args.resume) == '':
     args.resume = os.path.join(args.save_dir, args.resume)
+save_path = os.path.join(args.save_dir, 'glow.pth')
 
 if not os.path.exists(args.log_dir):
     os.mkdir(args.log_dir)
@@ -245,5 +246,5 @@ for i in range(args.start_iter, args.max_iter):
             state_dict[key] = state_dict[key].to(torch.device('cpu'))
 
         state = {'iter': i, 'state_dict': state_dict, 'optimizer': optimizer.state_dict()}
-        torch.save(state, args.resume)
+        torch.save(state, save_path)
 
