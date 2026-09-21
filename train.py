@@ -113,7 +113,8 @@ device = torch.device('cuda')
 
 if not os.path.exists(args.save_dir):
     os.mkdir(args.save_dir)
-args.resume = os.path.join(args.save_dir, args.resume)
+if not os.path.isabs(args.resume) and os.path.dirname(args.resume) == '':
+    args.resume = os.path.join(args.save_dir, args.resume)
 
 if not os.path.exists(args.log_dir):
     os.mkdir(args.log_dir)
