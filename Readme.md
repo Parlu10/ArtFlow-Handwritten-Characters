@@ -95,9 +95,83 @@ CUDA_VISIBLE_DEVICES=0,1 python3 -u train.py --content_dir $training_content_dir
 * `operator`: style transfer module. Options: `[adain, wct, decorator]`.
 * `save_dir`: path for saving the trained model.
 
-> The kanji pipeline commands (data preparation, fine-tuning, inference and
-> conversion to the thesis format) are documented in the **Pipeline** section of this
-> README, added with the final update.
+## Pipeline (kanji)
+
+End-to-end workflow: render synthetic kanji with fonts, fine-tune ArtFlow (AdaIN)
+so they look handwritten, and convert the output to the thesis dataset format.
+
+### Prerequisites
+
+1. Python venv + dependencies:
+   ```
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements_kanji.txt
+   ```
+2. Handwritten data: `data/samples_data.pkl` (from the HWDB1.0 `.gnt` files, see
+   [Kanji Pipeline: Data](#kanji-pipeline-data)).
+3. Pretrained checkpoint `experiments/ArtFlow-AdaIN/glow.pth` (see
+   [Pretrained Models](#pretrained-models)); the fine-tuned model is saved as
+   `experiments/ArtFlow-Kanji/glow.pth`.
+
+### 1. Data preparation
+
+```
+python prepare_kanji_data.py
+```
+
+Renders the synthetic content (every active character with SimSun and SimFang,
+`data/kanji_content/`), extracts the stratified handwritten style set from
+`data/samples_data.pkl` (`data/kanji_style/`) and fills the small probe subsets
+(`data/kanji_probe_content/`, `data/kanji_probe_style/`).
+
+### 2. Fine-tuning
+
+```
+./run_finetune_kanji.sh
+```
+
+Fine-tunes ArtFlow/AdaIN from the pretrained checkpoint on the kanji datasets
+(`n_flow 8`, `n_block 2`, `batch_size 8`, `lr 1e-5`, `max_iter 50000`), saving
+`experiments/ArtFlow-Kanji/glow.pth`.
+
+### 3. Inference
+
+```
+python infer_kanji.py
+```
+
+Stylizes every synthetic kanji with the **medoid** of the handwritten references
+(`data/kanji_probe_style/`): the style sample with the smallest sum of pairwise
+L2 distances is selected automatically and applied to the whole content batch
+(1-to-1, no cartesian product). Output: `output_kanji/{char}_{font}_stylized.png`.
+
+### 4. Conversion to the thesis format
+
+```
+python postprocess_thesis.py
+```
+
+Reads `output_kanji/` and writes `data/synthetic_handwritten.pkl`, a list of
+`{"tag_code": str, "image": np.uint8}` — the same schema as `samples_data.pkl`,
+so the thesis code loads it without changes.
+
+### Orchestration
+
+```
+./run_pipeline_kanji.sh                       # run all four steps
+./run_pipeline_kanji.sh --skip-prepare --skip-train   # resume from inference
+./run_pipeline_kanji.sh --skip-postprocess            # stop at the stylized PNGs
+```
+
+The orchestrator checks the venv, the pretrained checkpoint and `samples_data.pkl`,
+and accepts `--skip-prepare`, `--skip-train`, `--skip-infer` and
+`--skip-postprocess` to resume from any step.
+
+> Generated/large artifacts are ignored by git (`.gitignore`): `data/kanji_*/`,
+> `data/HWDB1.0/`, `data/samples_data.pkl`, `data/synthetic_handwritten.pkl`,
+> `output_*/`, `experiments/`, `models/`. When moving the repo to another machine
+> (e.g. the GPU server), copy the whole `data/` directory too.
 
 ## Citation
 ```
