@@ -236,7 +236,7 @@ for i in range(args.start_iter, args.max_iter):
                                                                       np.mean(np.array(log_mse))
                                                                        ))
         # persist training progression for later consultation
-        csv_path = os.path.join(args.log_dir, 'train_progress.csv')
+        csv_path = os.path.join(args.log_dir, 'train_progress_%s.csv' % os.path.basename(args.save_dir))
         if not os.path.exists(csv_path):
             with open(csv_path, 'w') as f:
                 f.write("iter,time_per_iter,loss_c,loss_s,loss_mse,lr\n")

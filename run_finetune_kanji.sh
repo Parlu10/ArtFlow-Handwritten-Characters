@@ -31,7 +31,9 @@ python -u train.py \
     --n_block 2 \
     --operator adain \
     --batch_size 2 \
-    --lr 1e-5 \
-    --max_iter 120000 \
+    --lr 5e-5 \
+    --max_iter 85000 \
+    --mse_weight 1.0 \
+    --content_weight 0.3 \
     --print_interval 100 \
     --save_model_interval 10000
