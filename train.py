@@ -235,6 +235,18 @@ for i in range(args.start_iter, args.max_iter):
                                                                       np.mean(np.array(log_c)), np.mean(np.array(log_s)),
                                                                       np.mean(np.array(log_mse))
                                                                        ))
+        # persist training progression for later consultation
+        csv_path = os.path.join(args.log_dir, 'train_progress.csv')
+        if not os.path.exists(csv_path):
+            with open(csv_path, 'w') as f:
+                f.write("iter,time_per_iter,loss_c,loss_s,loss_mse,lr\n")
+        with open(csv_path, 'a') as f:
+            f.write("%d,%.2f,%.3f,%.3f,%.3f,%.8f\n" % (i,
+                  (time.time()-Time)/args.print_interval,
+                  np.mean(np.array(log_c)), np.mean(np.array(log_s)),
+                  np.mean(np.array(log_mse)),
+                  optimizer.param_groups[0]['lr']))
+
         log_c = []
         log_s = []
         Time = time.time()
