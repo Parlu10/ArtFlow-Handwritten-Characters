@@ -5,6 +5,7 @@ import torch
 from pathlib import Path
 from PIL import Image
 from torchvision.utils import save_image
+from tqdm import tqdm
 
 from test import test_transform
 
@@ -101,6 +102,7 @@ def main():
     # -----------------------start------------------------
     output_dir = Path(args.output)
     output_dir.mkdir(exist_ok=True, parents=True)
+    print(f"output -> {output_dir}")
 
     # one style reference for the whole batch
     with torch.no_grad():
@@ -110,7 +112,7 @@ def main():
         style = style.to(device).unsqueeze(0)
         z_s = glow(style, forward=True)
 
-        for content_path in content_paths:
+        for content_path in tqdm(content_paths, desc='stylizing'):
             content = Image.open(str(content_path)).convert('RGB')
             img_transform = test_transform(content, args.size)
             content = img_transform(content)
@@ -123,7 +125,6 @@ def main():
 
             output_name = output_dir / '{:s}_stylized{:s}'.format(
                 content_path.stem, args.save_ext)
-            print(output_name)
             save_image(output, str(output_name))
 
     print(f"done: {len(content_paths)} stylized kanji in {output_dir}")
