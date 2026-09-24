@@ -26,8 +26,8 @@ def parse_args():
     )
     parser.add_argument("--size", type=int, default=256,
                         help="side length of the square images prepared for ArtFlow")
-    parser.add_argument("--max-style-samples", type=int, default=30000,
-                        help="global cap for the style set")
+    parser.add_argument("--max-style-samples", type=int, default=60000,
+                        help="global cap for the style set (~23 samples per char)")
     parser.add_argument("--max-samples-per-char", type=int, default=60,
                         help="per-class cap used during round-robin style sampling")
     parser.add_argument("--seed", type=int, default=42)

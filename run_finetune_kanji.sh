@@ -33,7 +33,7 @@ python -u train.py \
     --batch_size 2 \
     --lr 5e-5 \
     --max_iter 85000 \
-    --mse_weight 1.0 \
-    --content_weight 0.3 \
+    --mse_weight 0.3 \
+    --content_weight 0.5 \
     --print_interval 100 \
     --save_model_interval 10000
