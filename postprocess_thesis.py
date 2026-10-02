@@ -50,7 +50,7 @@ def collect_stylized(input_dir, fonts):
         if char is None:
             skipped.append(path.name)
             continue
-        img = Image.open(str(path)).convert("L")
+        img = Image.open(str(path)).convert("L").resize((64, 64), Image.LANCZOS)
         samples.append({"tag_code": char, "image": np.asarray(img, dtype=np.uint8),
                         "_font": font})
     return samples, skipped
