@@ -10,8 +10,16 @@ ArtFlow is a universal style transfer method that consists of reversible neural 
 ## Kanji Pipeline: Data
 
 This repository is adapted to transform **synthetic kanji** into **handwritten kanji**
-style by fine-tuning ArtFlow (AdaIN) on the CASIA-HWDB1.0 handwritten dataset
+style by fine-tuning ArtFlow on the CASIA-HWDB1.0 handwritten dataset
 (content = synthetic characters rendered with fonts, style = handwritten samples).
+
+Two style transfer operators are available and are selected with `--operator`:
+
+* `wct` (default): **Whitening and Coloring Transform** in the latent space —
+  the content latent is whitened with its own covariance and re-coloured with the
+  mean/covariance of the style latent (`glow_wct.py`).
+* `adain`: **Adaptive Instance Normalization** — the baseline of the original
+  ArtFlow release (`glow_adain.py`).
 
 The files needed are already inside the repository:
 
@@ -48,6 +56,43 @@ cp ../thesis/data/samples_data.pkl data/
 ## Content Leak Phenomenon
 When we continuously perform style transfer with a style transfer algorithm, the produced result will gradually lose the detail of the content image. The code in this repository solves this problem.
 
+## Style Transfer Operators
+
+Both operators act in the **latent space** of the Glow model:
+
+| operator | module | what it does |
+| --- | --- | --- |
+| `adain` | `glow_adain.py` | matches the mean and standard deviation of the style features (baseline) |
+| `wct` | `glow_wct.py` | whitens the content latent with its own covariance, then re-colours it with the mean/covariance of the style latent |
+
+`wct` is the default of the kanji pipeline, `adain` is kept as the baseline for the
+A/B comparison. The two checkpoints are **indistinguishable at load time** (the
+AdaIN and WCT models declare exactly the same tensors, only the transfer operator
+differs), therefore the operator used at inference **must** match the one used for
+fine-tuning: a mismatch does not raise any error, it silently produces wrong images.
+
+### WCT implementation notes
+
+`glow_wct.py` implements WCT **per sample**: the statistics are computed on each
+element of the batch separately (no information leaks between samples) and the
+computation is safe under `nn.DataParallel`.
+
+* `wct_eps` (default `1e-4`): added to both covariances before the decomposition
+  and used to clamp the eigenvalues. If the loss becomes `NaN`, increase it
+  following the ladder `1e-4` -> `1e-2` -> `1e-1` (the training script raises a
+  `RuntimeError` with this hint). Do **not** use `1.0`: at that value the whitening
+  degenerates into AdaIN, because the content covariance is removed entirely.
+* `wct_impl` (default `eigh`): `eigh` uses the symmetric eigen-decomposition (the
+  textbook WCT), `cholesky` uses a Cholesky factor. Both produce the same output
+  mean and covariance, but not the same tensor pointwise.
+
+Both are constructor arguments of `glow_wct.Glow`:
+
+```python
+glow = Glow(3, n_flow, n_block, affine=affine, conv_lu=conv_lu,
+            wct_eps=1e-4, wct_impl='eigh')
+```
+
 ## Dependencies
 This repository was adapted to run on modern PyTorch (the original code targeted
 Python 3.6 / PyTorch 1.8.1 / CUDA 10.2, which does not work on current GPUs such as
@@ -76,7 +121,8 @@ CUDA_VISIBLE_DEVICES=0 python3 -u test.py --content_dir data/kanji_content --sty
 * `n_flow`: number of the flow module used per block in the backbone network. Default is `8`.
 * `n_block`: number of the block used in the backbone network. Default is `2`.
 * `operator`: style transfer module. Options: `[adain, wct, decorator]`. The kanji
-  pipeline uses `adain`; `wct`/`decorator` are kept for A/B testing.
+  pipeline uses `wct` (default) or `adain` for the A/B comparison; `decorator` is
+  kept for A/B testing.
 * `decoder`: path for the pre-trained model. For `--operator wct` use
   `--decoder experiments/ArtFlow-WCT/glow.pth`; for `adain` use
   `--decoder experiments/ArtFlow-AdaIN/glow.pth`.
@@ -85,7 +131,7 @@ CUDA_VISIBLE_DEVICES=0 python3 -u test.py --content_dir data/kanji_content --sty
 ## Training
 To train ArtFlow by yourself. Please firstly download the Imagenet pre-trained VGG19 model from [Google Drive](https://drive.google.com/drive/folders/1ecTshAlTsLf7i3oyN2ntyEPEeIoxUDu9?usp=sharing) and put the downloaded `models` directory under the root of the repository. Then run the following commands.
 ```
-CUDA_VISIBLE_DEVICES=0,1 python3 -u train.py --content_dir $training_content_dir --style_dir $training_style_dir --n_flow 8 --n_block 2 --operator adain --save_dir $param_save_dir --batch_size 4
+CUDA_VISIBLE_DEVICES=0,1 python3 -u train.py --content_dir $training_content_dir --style_dir $training_style_dir --n_flow 8 --n_block 2 --operator wct --save_dir $param_save_dir --batch_size 4
 ```
 
 * `content_dir`: path for the training content images.
@@ -97,8 +143,18 @@ CUDA_VISIBLE_DEVICES=0,1 python3 -u train.py --content_dir $training_content_dir
 
 ## Pipeline (kanji)
 
-End-to-end workflow: render synthetic kanji with fonts, fine-tune ArtFlow (AdaIN)
-so they look handwritten, and convert the output to the thesis dataset format.
+End-to-end workflow: render synthetic kanji with fonts, fine-tune ArtFlow so they
+look handwritten, and convert the output to the thesis dataset format.
+
+The style transfer operator is selected with `--operator` (`wct` by default,
+`adain` for the baseline) and every path of the pipeline depends on it:
+
+| | `--operator wct` | `--operator adain` |
+| --- | --- | --- |
+| pretrained checkpoint | `experiments/ArtFlow-WCT/glow.pth` | `experiments/ArtFlow-AdaIN/glow.pth` |
+| fine-tuned checkpoint | `experiments/ArtFlow-Kanji-WCT/glow.pth` | `experiments/ArtFlow-Kanji/glow.pth` |
+| stylized images | `output_kanji_wct/` | `output_kanji/` |
+| thesis pickle | `data/synthetic_handwritten_wct.pkl` | `data/synthetic_handwritten.pkl` |
 
 ### Prerequisites
 
@@ -110,9 +166,11 @@ so they look handwritten, and convert the output to the thesis dataset format.
    ```
 2. Handwritten data: `data/samples_data.pkl` (from the HWDB1.0 `.gnt` files, see
    [Kanji Pipeline: Data](#kanji-pipeline-data)).
-3. Pretrained checkpoint `experiments/ArtFlow-AdaIN/glow.pth` (see
+3. Pretrained checkpoint `experiments/ArtFlow-WCT/glow.pth` for `--operator wct`
+   (default) or `experiments/ArtFlow-AdaIN/glow.pth` for `--operator adain` (see
    [Pretrained Models](#pretrained-models)); the fine-tuned model is saved as
-   `experiments/ArtFlow-Kanji/glow.pth`.
+   `experiments/ArtFlow-Kanji-WCT/glow.pth` (`wct`) or
+   `experiments/ArtFlow-Kanji/glow.pth` (`adain`).
 
 ### 1. Data preparation
 
@@ -128,57 +186,84 @@ Renders the synthetic content (every active character with SimSun and SimFang,
 ### 2. Fine-tuning
 
 ```
-./run_finetune_kanji.sh
+./run_finetune_kanji.sh                   # WCT branch (default)
+./run_finetune_kanji.sh --operator adain  # AdaIN baseline
 ```
 
-Fine-tunes ArtFlow/AdaIN from the pretrained checkpoint on the kanji datasets
-(`n_flow 8`, `n_block 2`, `batch_size 8`, `lr 1e-5`, `max_iter 50000`), saving
-`experiments/ArtFlow-Kanji/glow.pth`.
+Fine-tunes ArtFlow from the pretrained checkpoint of the selected operator on the
+kanji datasets (`n_flow 8`, `n_block 2`, `batch_size 2`, `lr 5e-5`,
+`max_iter 85000`), saving `experiments/ArtFlow-Kanji-WCT/glow.pth` (`wct`) or
+`experiments/ArtFlow-Kanji/glow.pth` (`adain`).
 
 ### 3. Inference
 
 ```
-python infer_kanji.py
+python infer_kanji.py --operator wct \
+    --decoder experiments/ArtFlow-Kanji-WCT/glow.pth \
+    --output output_kanji_wct
 ```
 
 Stylizes every synthetic kanji with the **medoid** of the handwritten references
 (`data/kanji_probe_style/`): the style sample with the smallest sum of pairwise
 L2 distances is selected automatically and applied to the whole content batch
-(1-to-1, no cartesian product). Output: `output_kanji/{char}_{font}_stylized.png`.
+(1-to-1, no cartesian product). Output: `output_kanji_wct/{char}_{font}_stylized.png`.
+
+> `--operator` must match the operator the checkpoint was fine-tuned with: the
+> AdaIN and WCT checkpoints declare the same tensors, so a mismatch loads silently
+> and produces wrong images.
 
 ### 4. Conversion to the thesis format
 
 ```
-python postprocess_thesis.py
+python postprocess_thesis.py --input output_kanji_wct \
+    --output data/synthetic_handwritten_wct.pkl
 ```
 
-Reads `output_kanji/` and writes `data/synthetic_handwritten.pkl`, a list of
+Reads `output_kanji_wct/` and writes `data/synthetic_handwritten_wct.pkl`, a list of
 `{"tag_code": str, "image": np.uint8}` — the same schema as `samples_data.pkl`,
-so the thesis code loads it without changes.
+so the thesis code loads it without changes. Without `--input/--output` the
+defaults `output_kanji/` and `data/synthetic_handwritten.pkl` are used (AdaIN
+baseline).
 
 ### Orchestration
 
 ```
-./run_pipeline_kanji.sh                       # run all four steps
-./run_pipeline_kanji.sh --skip-prepare --skip-train   # resume from inference
-./run_pipeline_kanji.sh --skip-postprocess            # stop at the stylized PNGs
+./run_pipeline_kanji.sh                             # WCT branch, all four steps
+./run_pipeline_kanji.sh --operator adain            # AdaIN baseline
+./run_pipeline_kanji.sh --skip-prepare --skip-train # resume from inference
+./run_pipeline_kanji.sh --skip-postprocess          # stop at the stylized PNGs
 ```
 
 The orchestrator checks the venv, the pretrained checkpoint and `samples_data.pkl`,
-and accepts `--skip-prepare`, `--skip-train`, `--skip-infer` and
-`--skip-postprocess` to resume from any step.
+and accepts `--operator {wct,adain}` plus `--skip-prepare`, `--skip-train`,
+`--skip-infer` and `--skip-postprocess` to resume from any step.
 
 > Generated/large artifacts are ignored by git (`.gitignore`): `data/kanji_*/`,
 > `data/HWDB1.0/`, `data/samples_data.pkl`, `data/synthetic_handwritten.pkl`,
-> `output_*/`, `experiments/`, `models/`. When moving the repo to another machine
+> `data/synthetic_handwritten_wct.pkl`, `output_*/`, `experiments/`, `models/`.
+> When moving the repo to another machine
 > (e.g. the GPU server), copy the whole `data/` directory too.
 
 ## Citation
+
+ArtFlow:
 ```
 @inproceedings{artflow2021,
  title={ArtFlow: Unbiased image style transfer via reversible neural flows},
  author={An, Jie and Huang, Siyu and Song, Yibing and Dou, Dejing and Liu, Wei and Luo, Jiebo},
  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+ year={2021}
+}
+```
+
+The latent-space whitening and colouring used by `glow_wct.py` follows **StyleFlow**:
+```
+@article{abdal2021styleflow,
+ title={StyleFlow: Attribute-conditioned Exploration of StyleGAN-Generated Images using Conditional Continuous Normalizing Flows},
+ author={Abdal, Khaldoun and Zhu, Jun-Yan and Mitra, Niloy J. and Wonka, Peter},
+ journal={ACM Transactions on Graphics},
+ volume={40},
+ number={4},
  year={2021}
 }
 ```
