@@ -41,6 +41,10 @@ def parse_args():
                              'automatically as the style reference')
     parser.add_argument('--decoder', type=str, default='experiments/ArtFlow-Kanji/glow.pth',
                         help='path for the fine-tuned decoder model')
+    parser.add_argument('--operator', type=str, default='adain',
+                        choices=['wct', 'adain'],
+                        help='style feature transfer operator; must match the '
+                             'operator the checkpoint was fine-tuned with')
     # Additional options
     parser.add_argument('--size', type=int, default=256,
                         help='New size for the content and style images')
@@ -66,7 +70,12 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device:", device)
 
-    from glow_adain import Glow
+    if args.operator == 'wct':
+        from glow_wct import Glow
+    elif args.operator == 'adain':
+        from glow_adain import Glow
+    else:
+        raise ValueError('Not implemented operator: {}'.format(args.operator))
 
     content_dir = Path(args.content_dir)
     content_paths = [f for f in content_dir.glob('*')]

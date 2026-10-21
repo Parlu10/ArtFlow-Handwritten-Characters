@@ -199,6 +199,13 @@ for i in range(args.start_iter, args.max_iter):
     loss_mse = mseloss(content_images, stylized)
     loss_style = args.content_weight*loss_c + args.style_weight*loss_s + args.mse_weight*loss_mse
 
+    if not torch.isfinite(loss_style):
+        raise RuntimeError(
+            "non-finite loss at iter {} (operator '{}'). The WCT whitening "
+            "divides by sqrt(eigenvalues): with '--operator wct' try a larger "
+            "wct_eps (1e-4 -> 1e-2 -> 1e-1) or check the input images."
+            .format(i, args.operator))
+
     # optimizer update
     optimizer.zero_grad()
     loss_style.backward()

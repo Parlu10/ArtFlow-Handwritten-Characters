@@ -3,6 +3,7 @@ data/samples_data.pkl
 data/HWDB1.0/
 data/kanji_*/
 data/synthetic_handwritten.pkl
+data/synthetic_handwritten_wct.pkl
 
 # pretrained / trained models
 experiments/
