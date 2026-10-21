@@ -7,49 +7,75 @@ from scipy import linalg as la
 
 logabs = lambda x: torch.log(torch.abs(x))
 
-def wct(cont_feat, styl_feat):
-    cFSize = cont_feat.size()
-    c_mean = torch.mean(cont_feat, 1)  # c x (h x w)
-    c_mean = c_mean.unsqueeze(1).expand_as(cont_feat)
-    cont_feat = cont_feat - c_mean
+class WCT(nn.Module):
+    """Feature transfer by WCT (whitening-colouring), computed per sample.
 
-    iden = torch.eye(cFSize[0])  # .double()
-    iden = iden.cuda()
-    contentConv = torch.mm(cont_feat, cont_feat.t()).div(cFSize[1] - 1)# + iden
-    # del iden
-    c_u, c_e, c_v = torch.linalg.svd(contentConv)
-    c_v = c_v.transpose(0, 1)  # torch.linalg.svd returns Vh -> back to V
-    # c_e2, c_v = torch.eig(contentConv, True)
-    # c_e = c_e2[:,0]
+    Follows Li et al., "Universal Style Transfer via Feature Transforms",
+    but generalised to a batch: the covariance is estimated independently for
+    each sample, so no information leaks across the batch and the result
+    coincides with the reference implementation when the batch holds one
+    element.
 
-    k_c = cFSize[0]
-    for i in range(cFSize[0] - 1, -1, -1):
-        if c_e[i] >= 0.00001:
-            k_c = i + 1
-            break
+    content, style: [N, C, H, W], where C is the feature dimension and H*W
+    the number of observations used to estimate the covariance.
+    The output carries the mean and the covariance of `style`.
+    """
 
-    sFSize = styl_feat.size()
-    s_mean = torch.mean(styl_feat, 1)
-    styl_feat = styl_feat - s_mean.unsqueeze(1).expand_as(styl_feat)
-    styleConv = torch.mm(styl_feat, styl_feat.t()).div(sFSize[1] - 1)
-    s_u, s_e, s_v = torch.linalg.svd(styleConv)
-    s_v = s_v.transpose(0, 1)  # torch.linalg.svd returns Vh -> back to V
+    def __init__(self, eps=1e-4, impl='eigh'):
+        super().__init__()
+        if impl not in ('eigh', 'cholesky'):
+            raise ValueError("unknown wct impl: '{}'".format(impl))
+        self.eps = eps
+        self.impl = impl
 
-    k_s = sFSize[0]
-    for i in range(sFSize[0] - 1, -1, -1):
-        if s_e[i] >= 0.00001:
-            k_s = i + 1
-            break
+    def forward(self, content, style):
+        if content.shape != style.shape:
+            raise ValueError(
+                "WCT: content and style must have the same shape, got {} and {}. "
+                "Use images with the same aspect ratio (the kanji pipeline "
+                "always works on 256x256).".format(tuple(content.shape),
+                                                   tuple(style.shape)))
 
-    c_d = (c_e[0:k_c]).pow(-0.5)
-    step1 = torch.mm(c_v[:, 0:k_c], torch.diag(c_d))
-    step2 = torch.mm(step1, (c_v[:, 0:k_c].t()))
-    whiten_cF = torch.mm(step2, cont_feat)
+        n, c = content.shape[:2]
+        dtype = content.dtype
 
-    s_d = (s_e[0:k_s]).pow(0.5)
-    targetFeature = torch.mm(torch.mm(torch.mm(s_v[:, 0:k_s], torch.diag(s_d)), (s_v[:, 0:k_s].t())), whiten_cF)
-    targetFeature = targetFeature + s_mean.unsqueeze(1).expand_as(targetFeature)
-    return targetFeature
+        # fp32 internally: linalg.eigh / cholesky have no half precision kernel
+        x = content.reshape(n, c, -1).float()
+        s = style.reshape(n, c, -1).float()
+
+        mu_x = x.mean(dim=2, keepdim=True)
+        mu_s = s.mean(dim=2, keepdim=True)
+        xc = x - mu_x
+        sc = s - mu_s
+        m = xc.shape[2]
+
+        cov_x = torch.bmm(xc, xc.transpose(-1, -2)) / (m - 1)
+        cov_s = torch.bmm(sc, sc.transpose(-1, -2)) / (m - 1)
+
+        # regularisation: keeps the whitening well defined and prevents the
+        # covariance from collapsing onto the style statistics
+        eye = torch.eye(c, device=content.device, dtype=torch.float32)
+        cov_x = cov_x + self.eps * eye
+        cov_s = cov_s + self.eps * eye
+
+        if self.impl == 'cholesky':
+            # gradient stays finite even with degenerate eigenvalues, where
+            # eigh / svd produce NaN because of the 1/(l_i - l_j) factor
+            l_x = torch.linalg.cholesky(cov_x)
+            l_s = torch.linalg.cholesky(cov_s)
+            xw = torch.linalg.solve_triangular(l_x, xc, upper=False)
+            out = torch.bmm(l_s, xw)
+        else:
+            ev_x, v_x = torch.linalg.eigh(cov_x)
+            ev_s, v_s = torch.linalg.eigh(cov_s)
+            d_x = ev_x.clamp_min(self.eps).rsqrt()
+            d_s = ev_s.clamp_min(self.eps).sqrt()
+            whiten = torch.bmm(v_x, d_x.unsqueeze(-1) * v_x.transpose(-1, -2))
+            color = torch.bmm(v_s, d_s.unsqueeze(-1) * v_s.transpose(-1, -2))
+            out = torch.bmm(color, torch.bmm(whiten, xc))
+
+        return (out + mu_s).to(dtype).reshape_as(content)
+
 
 def calc_mean_std(feat, eps=1e-5):
     size = feat.size()
@@ -332,7 +358,8 @@ class Block(nn.Module):
 
 
 class Glow(nn.Module):
-    def __init__(self, in_channel, n_flow, n_block, affine=True, conv_lu=True):
+    def __init__(self, in_channel, n_flow, n_block, affine=True, conv_lu=True,
+                 wct_eps=1e-4, wct_impl='eigh'):
         super().__init__()
 
         self.blocks = nn.ModuleList()
@@ -342,6 +369,8 @@ class Glow(nn.Module):
             n_channel *= 4
             
         self.blocks.append(Block(n_channel, n_flow, affine=affine))
+
+        self.wct = WCT(eps=wct_eps, impl=wct_impl)
 
         
     def forward(self, input, forward=True, style=None):
@@ -355,15 +384,13 @@ class Glow(nn.Module):
         for block in self.blocks:
             z = block(z)
         if style is not None:
-            z_wct = wct(z.view(z.shape[1], -1), style.view(style.shape[1], -1))
-            z = z_wct.view_as(out)
+            z = self.wct(z, style)
         return z
 
     def _reverse(self, z, style=None):
         out = z
         if style is not None:
-            out_wct = wct(out.view(out.shape[1], -1), style.view(style.shape[1], -1))
-            out = out_wct.view_as(out)
+            out = self.wct(out, style)
         for i, block in enumerate(self.blocks[::-1]):
             out = block.reverse(out)
         return out
